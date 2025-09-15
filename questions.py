@@ -1,32 +1,46 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 import random
 import pandas as pd
 
+# Define sets of accepted yes/no responses for users in various languages and forms
 YES_ANSWERS = {"y", "yes", "ja", "si", "true", "t"}
 NO_ANSWERS = {"n", "no", "nein", "nah", "false", "f"}
 
 class QuizQuestion(ABC):
+    """
+    Abstract base class for quiz questions.
+    Defines the required methods to create, display, and check questions.
+    """
     def __init__(self, data: pd.DataFrame):
         self.data = data
 
     @abstractmethod
     def prepare_question(self) -> bool:
-        """Prepare question data. Return False if none available."""
+        """
+        Prepare question data for this instance. Return False if not possible.
+        """
         pass
 
     @abstractmethod
     def show_question(self):
-        """Print the question prompt."""
+        """
+        Display the question to the user.
+        """
         pass
 
     @abstractmethod
-    def ask_with_preset_answer(self, user_answer: str) -> Optional[Tuple[bool, int, dict]]:
-        """Check user_answer, return (correct, points, artwork_dict) or None if invalid."""
+    def ask_with_preset_answer(self, user_answer: str) -> Optional[Tuple[bool, int, Union[dict, Tuple[dict, dict]]]]:
+        """
+        Check the user's preset answer, return correctness and scoring info.
+        Return None if input is invalid.
+        """
         pass
 
-
 class YearExactCheck(QuizQuestion):
+    """
+    Question: Is this artwork from this year?
+    """
     def prepare_question(self) -> bool:
         pool = self.data.dropna(subset=["Year_exact", "Title", "Artist", "Image URL", "Painting Info URL", "Artist Info URL"])
         if pool.empty:
@@ -37,6 +51,7 @@ class YearExactCheck(QuizQuestion):
             self.proposed_year = self.year
             self.correct_answer = True
         else:
+            # Other random year from the dataset
             years = [y for y in pool["Year_exact"].dropna().unique() if y != self.year]
             self.proposed_year = int(random.choice(years)) if years else self.year
             self.correct_answer = (self.proposed_year == self.year)
@@ -54,20 +69,20 @@ class YearExactCheck(QuizQuestion):
         else:
             return None
         is_correct = (is_yes == self.correct_answer)
-        if is_correct:
-            print("Correct!")
-        else:
-            print(f"Wrong. The actual year is {self.year}.")
+        print("Correct!" if is_correct else f"Wrong. The actual year is {self.year}.")
         return is_correct, int(is_correct), self.artwork.to_dict()
 
-
 class ArtistAuthorshipCheck(QuizQuestion):
+    """
+    Question: Did this artist make this artwork?
+    """
     def prepare_question(self) -> bool:
         pool = self.data.dropna(subset=["Artist", "Title", "Image URL", "Painting Info URL", "Artist Info URL"])
         if pool.empty:
             return False
         self.artwork = pool.sample(1).iloc[0]
         self.actual_artist = self.artwork["Artist"]
+        # 50%: propose actual artist, 50%: propose a random other artist
         if random.random() < 0.5:
             self.proposed_artist = self.actual_artist
             self.correct_answer = True
@@ -89,16 +104,13 @@ class ArtistAuthorshipCheck(QuizQuestion):
         else:
             return None
         is_correct = (is_yes == self.correct_answer)
-        if is_correct:
-            print("Correct!")
-            if not self.correct_answer:
-                print(f"The actual artist is {self.actual_artist}.")
-        else:
-            print(f"Wrong. The actual artist is {self.actual_artist}.")
+        print("Correct!" if is_correct else f"Wrong. The actual artist is {self.actual_artist}.")
         return is_correct, int(is_correct), self.artwork.to_dict()
 
-
 class OldestArtworkCheck(QuizQuestion):
+    """
+    Question: Which of these two artworks is older?
+    """
     def prepare_question(self) -> bool:
         pool = self.data.dropna(subset=["Year_exact", "Title", "Artist", "Image URL", "Painting Info URL", "Artist Info URL"])
         if len(pool) < 2:
@@ -118,29 +130,22 @@ class OldestArtworkCheck(QuizQuestion):
     def ask_with_preset_answer(self, user_answer: str) -> Optional[Tuple[bool, int, Tuple[dict, dict]]]:
         if user_answer not in {"1", "2", "s"}:
             return None
-
         year1 = int(self.art1["Year_exact"])
         year2 = int(self.art2["Year_exact"])
-
         if year1 == year2:
             correct_answer = "s"
         elif year1 < year2:
             correct_answer = "1"
         else:
             correct_answer = "2"
-
         is_correct = (user_answer == correct_answer)
-        if is_correct:
-            print(f"Correct! Years were 1: {year1}, 2: {year2}")
-        else:
-            print(f"Wrong. Years were 1: {year1}, 2: {year2}")
-
-        # Return both artworks as a tuple of dicts for URL display
+        print(f"Correct! Years were 1: {year1}, 2: {year2}" if is_correct else f"Wrong. Years were 1: {year1}, 2: {year2}")
         return is_correct, int(is_correct), (self.art1.to_dict(), self.art2.to_dict())
 
-
-
 class FaceOrBodyPresenceCheck(QuizQuestion):
+    """
+    Question: Does this artwork depict a human face or body?
+    """
     def prepare_question(self) -> bool:
         pool = self.data.dropna(subset=["Face_or_body", "Title", "Image URL", "Painting Info URL", "Artist Info URL"])
         if pool.empty:
@@ -162,8 +167,5 @@ class FaceOrBodyPresenceCheck(QuizQuestion):
         else:
             return None
         is_correct = (is_yes == self.correct_answer)
-        if is_correct:
-            print("Correct!")
-        else:
-            print(f"Wrong. The presence is: {self.artwork['Face_or_body'].lower()}")
+        print("Correct!" if is_correct else f"Wrong. The presence is: {self.artwork['Face_or_body'].lower()}")
         return is_correct, int(is_correct), self.artwork.to_dict()
